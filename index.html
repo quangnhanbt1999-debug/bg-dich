@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Tra Cứu Board Game</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    @keyframes flashHighlight {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
+      25%, 75% { box-shadow: 0 0 0 4px rgba(234, 179, 8, 0.9); background-color: #fefce8; }
+    }
+    .highlight-item { animation: flashHighlight 2.2s ease-in-out; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen font-sans pb-16">
+
+  <!-- MÀN HÌNH ĐĂNG NHẬP -->
+  <div id="login-view" class="hidden min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-sm rounded-2xl shadow-lg p-6">
+      <div class="text-center mb-6">
+        <div class="text-3xl mb-1">🎲</div>
+        <h1 class="text-xl font-bold text-slate-900">Kho Dịch Board Game</h1>
+        <p class="text-sm text-slate-500 mt-1">Đăng nhập để tra cứu luật & thẻ bài</p>
+      </div>
+      <form id="login-form" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Tên tài khoản</label>
+          <input id="login-user" type="text" required placeholder="VD: quangnhan_khach"
+            class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Mật khẩu</label>
+          <input id="login-pass" type="password" required placeholder="Nhập mật khẩu"
+            class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </div>
+        <p id="login-error" class="text-sm text-red-600 hidden"></p>
+        <button id="login-btn" type="submit"
+          class="w-full bg-indigo-600 text-white font-semibold py-2.5 rounded-xl active:bg-indigo-700">
+          Đăng nhập
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- GIAO DIỆN CHÍNH -->
+  <div id="app-view" class="hidden max-w-2xl mx-auto">
+    <!-- Thanh trên cùng -->
+    <header class="bg-indigo-700 text-white px-4 py-3 flex items-center justify-between sticky top-0 z-30 shadow">
+      <div class="flex items-center gap-2 min-w-0">
+        <button id="back-btn" onclick="showHome()" class="hidden px-2 py-1 rounded-lg bg-indigo-600 text-sm font-medium">←</button>
+        <h1 id="header-title" class="font-bold text-base truncate">🎲 Board Game</h1>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <span id="role-badge" class="text-xs px-2 py-0.5 rounded-full bg-indigo-500"></span>
+        <button onclick="logout()" class="text-xs bg-indigo-800 px-2.5 py-1.5 rounded-lg">Thoát</button>
+      </div>
+    </header>
+
+    <!-- DANH SÁCH BOARD GAME -->
+    <main id="home-section" class="p-4 space-y-4">
+      <div class="flex gap-2">
+        <input id="game-search" type="text" oninput="renderGames()" placeholder="🔍 Tìm tên board game..."
+          class="flex-1 bg-white px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <button id="add-game-btn" onclick="openGameModal()"
+          class="hidden bg-indigo-600 text-white px-3.5 py-2.5 rounded-xl text-sm font-semibold shrink-0">+ Game</button>
+      </div>
+      <div id="games-list" class="space-y-3"></div>
+    </main>
+
+    <!-- CHI TIẾT 1 BOARD GAME -->
+    <main id="detail-section" class="hidden">
+      <!-- Ô tìm kiếm gợi ý ghim cố định -->
+      <div class="sticky top-[52px] z-20 bg-slate-100 px-4 pt-3 pb-2 border-b border-slate-200">
+        <div class="relative">
+          <input id="entry-search" type="text" autocomplete="off"
+            oninput="handleAutocomplete()" onfocus="handleAutocomplete()"
+            placeholder="🔍 Gõ tên bài tiếng Anh, từ khóa luật..."
+            class="w-full bg-white pl-3.5 pr-9 py-2.5 rounded-xl border border-slate-300 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <button id="clear-search-btn" onclick="clearSearch()"
+            class="hidden absolute right-2.5 top-2.5 text-slate-400 text-sm px-1">✕</button>
+          <!-- Hộp gợi ý -->
+          <div id="suggestions-box"
+            class="hidden absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-72 overflow-y-auto divide-y divide-slate-100 z-30">
+          </div>
+        </div>
+
+        <!-- 3 Tab chính -->
+        <div class="grid grid-cols-3 gap-1.5 mt-2.5">
+          <button onclick="switchTab('rule')" id="tab-rule" class="tab-btn py-2 rounded-lg text-xs font-semibold"></button>
+          <button onclick="switchTab('card')" id="tab-card" class="tab-btn py-2 rounded-lg text-xs font-semibold"></button>
+          <button onclick="switchTab('other')" id="tab-other" class="tab-btn py-2 rounded-lg text-xs font-semibold"></button>
+        </div>
+      </div>
+
+      <div class="p-4 space-y-3">
+        <button id="add-entry-btn" onclick="openEntryModal()"
+          class="hidden w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold shadow-sm">
+          + Thêm nội dung mới
+        </button>
+        <div id="entries-list" class="space-y-3"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- MODAL THÊM / SỬA GAME -->
+  <div id="game-modal" class="hidden fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-md rounded-2xl p-5 space-y-3">
+      <h2 id="game-modal-title" class="font-bold text-lg">Thêm Board Game</h2>
+      <input type="hidden" id="game-id" />
+      <input id="game-name" type="text" placeholder="Tên Board Game (VD: Arkham Horror)"
+        class="w-full px-3 py-2 border rounded-xl text-sm" />
+      <textarea id="game-desc" rows="2" placeholder="Mô tả ngắn (không bắt buộc)"
+        class="w-full px-3 py-2 border rounded-xl text-sm"></textarea>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModals()" class="px-4 py-2 text-sm rounded-xl bg-slate-100">Hủy</button>
+        <button onclick="saveGame()" class="px-4 py-2 text-sm rounded-xl bg-indigo-600 text-white font-semibold">Lưu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL THÊM / SỬA NỘI DUNG -->
+  <div id="entry-modal" class="hidden fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-md rounded-2xl p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+      <h2 id="entry-modal-title" class="font-bold text-lg">Thêm nội dung</h2>
+      <input type="hidden" id="entry-id" />
+      <div>
+        <label class="text-xs font-semibold text-slate-600">Phân mục</label>
+        <select id="entry-category" class="w-full mt-1 px-3 py-2 border rounded-xl text-sm bg-white">
+          <option value="rule">Sách luật</option>
+          <option value="card">Card text</option>
+          <option value="other">Khác</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-slate-600">Tiêu đề / Tên tiếng Anh (dùng để tìm kiếm)</label>
+        <input id="entry-title-en" type="text" placeholder="VD: Fireball hoặc Giai đoạn chiến đấu"
+          class="w-full mt-1 px-3 py-2 border rounded-xl text-sm" />
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-slate-600">Tên tiếng Việt / Nhãn phụ (không bắt buộc)</label>
+        <input id="entry-title-vi" type="text" placeholder="VD: Cầu Lửa (Thẻ Phép)"
+          class="w-full mt-1 px-3 py-2 border rounded-xl text-sm" />
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-slate-600">Nội dung bản dịch</label>
+        <textarea id="entry-content" rows="5" placeholder="Nhập nội dung dịch chi tiết..."
+          class="w-full mt-1 px-3 py-2 border rounded-xl text-sm"></textarea>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModals()" class="px-4 py-2 text-sm rounded-xl bg-slate-100">Hủy</button>
+        <button onclick="saveEntry()" class="px-4 py-2 text-sm rounded-xl bg-indigo-600 text-white font-semibold">Lưu</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========= THAY 2 DÒNG DƯỚI ĐÂY BẰNG MÃ SUPABASE CỦA BẠN =========
+    const SUPABASE_URL = "[https://xxxxx.supabase.co](https://xxxxx.supabase.co)";
+    const SUPABASE_ANON_KEY = "eyJ...";
+    // ================================================================
+
+    const ADMIN_EMAIL = "quangnhan_admin@bg.local";
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let isAdmin = false;
+    let games = [];
+    let currentGame = null;
+    let entries = [];
+    let currentTab = "rule";
+
+    const CAT_META = {
+      rule: { label: "Sách luật", badge: "bg-blue-100 text-blue-700" },
+      card: { label: "Card text", badge: "bg-emerald-100 text-emerald-700" },
+      other: { label: "Khác", badge: "bg-amber-100 text-amber-800" }
+    };
+
+    const norm = (s = "") =>
+      s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+
+    const esc = (s = "") =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+    // Khởi động
+    async function init() {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) enterApp(session.user);
+      else document.getElementById("login-view").classList.remove("hidden");
+    }
+
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById("login-error");
+      const btn = document.getElementById("login-btn");
+      errEl.classList.add("hidden");
+      btn.textContent = "Đang đăng nhập...";
+      btn.disabled = true;
+
+      let u = document.getElementById("login-user").value.trim().toLowerCase();
+      if (!u.includes("@")) u += "@bg.local";
+      const password = document.getElementById("login-pass").value;
+
+      const { data, error } = await sb.auth.signInWithPassword({ email: u, password });
+      btn.textContent = "Đăng nhập";
+      btn.disabled = false;
+
+      if (error) {
+        errEl.textContent = "Sai tên tài khoản hoặc mật khẩu!";
+        errEl.classList.remove("hidden");
+      } else {
+        enterApp(data.user);
+      }
+    });
+
+    async function logout() {
+      await sb.auth.signOut();
+      location.reload();
+    }
+
+    function enterApp(user) {
+      isAdmin = user.email === ADMIN_EMAIL;
+      document.getElementById("login-view").classList.add("hidden");
+      document.getElementById("app-view").classList.remove("hidden");
+      document.getElementById("role-badge").textContent = isAdmin ? "Admin" : "Khách";
+      document.getElementById("add-game-btn").classList.toggle("hidden", !isAdmin);
+      document.getElementById("add-entry-btn").classList.toggle("hidden", !isAdmin);
+      loadGames();
+    }
+
+    async function loadGames() {
+      const { data, error } = await sb.from("games").select("*").order("created_at", { ascending: false });
+      if (error) return alert("Lỗi tải dữ liệu: " + error.message);
+      games = data || [];
+      renderGames();
+    }
+
+    function renderGames() {
+      const q = norm(document.getElementById("game-search").value.trim());
+      const list = games.filter(g => norm(g.name).includes(q) || norm(g.description).includes(q));
+      const el = document.getElementById("games-list");
+
+      if (!list.length) {
+        el.innerHTML = `<div class="text-center text-sm text-slate-400 py-10">Chưa có board game nào.</div>`;
+        return;
+      }
+
+      el.innerHTML = list.map(g => `
+        <div onclick="openGame('${g.id}')" class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 active:bg-slate-50 cursor-pointer">
+          <div class="flex justify-between items-start gap-2">
+            <div>
+              <h3 class="font-bold text-base text-slate-900">${esc(g.name)}</h3>
+              ${g.description ? `<p class="text-xs text-slate-500 mt-1">${esc(g.description)}</p>` : ""}
+            </div>
+            ${isAdmin ? `
+              <div class="flex gap-1.5 shrink-0" onclick="event.stopPropagation()">
+                <button onclick="openGameModal('${g.id}')" class="text-xs px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700">Sửa</button>
+                <button onclick="deleteGame('${g.id}')" class="text-xs px-2.5 py-1 rounded-lg bg-red-50 text-red-600">Xóa</button>
+              </div>` : ""}
+          </div>
+        </div>
+      `).join("");
+    }
+
+    async function openGame(gameId) {
+      currentGame = games.find(g => g.id === gameId);
+      if (!currentGame) return;
+      document.getElementById("home-section").classList.add("hidden");
+      document.getElementById("detail-section").classList.remove("hidden");
+      document.getElementById("back-btn").classList.remove("hidden");
+      document.getElementById("header-title").textContent = currentGame.name;
+      clearSearch();
+      await loadEntries();
+      switchTab("rule");
+    }
+
+    function showHome() {
+      currentGame = null;
+      document.getElementById("detail-section").classList.add("hidden");
+      document.getElementById("home-section").classList.remove("hidden");
+      document.getElementById("back-btn").classList.add("hidden");
+      document.getElementById("header-title").textContent = "🎲 Board Game";
+    }
+
+    async function loadEntries() {
+      const { data, error } = await sb.from("entries").select("*")
+        .eq("game_id", currentGame.id).order("created_at", { ascending: true });
+      if (error) return alert("Lỗi tải nội dung: " + error.message);
+      entries = data || [];
+      updateTabCounts();
+      renderEntries();
+    }
+
+    function updateTabCounts() {
+      ["rule", "card", "other"].forEach(cat => {
+        const count = entries.filter(e => e.category === cat).length;
+        document.getElementById("tab-" + cat).textContent = `${CAT_META[cat].label} (${count})`;
+      });
+    }
+
+    function switchTab(cat) {
+      currentTab = cat;
+      ["rule", "card", "other"].forEach(c => {
+        const btn = document.getElementById("tab-" + c);
+        btn.className = c === cat
+          ? "tab-btn py-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm"
+          : "tab-btn py-2 rounded-lg text-xs font-semibold bg-white text-slate-600 border border-slate-200";
+      });
+      renderEntries();
+    }
+
+    function renderEntries() {
+      const list = entries.filter(e => e.category === currentTab);
+      const el = document.getElementById("entries-list");
+      if (!list.length) {
+        el.innerHTML = `<div class="text-center text-sm text-slate-400 py-10">Chưa có mục nào trong phần này.</div>`;
+        return;
+      }
+      el.innerHTML = list.map(e => `
+        <div id="entry-${e.id}" class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 transition">
+          <div class="flex justify-between items-start gap-2">
+            <div>
+              <h3 class="font-bold text-slate-900 text-[15px]">${esc(e.title_en)}</h3>
+              ${e.title_vi ? `<div class="text-xs font-semibold text-indigo-600 mt-0.5">${esc(e.title_vi)}</div>` : ""}
+            </div>
+            ${isAdmin ? `
+              <div class="flex gap-1.5 shrink-0">
+                <button onclick="openEntryModal('${e.id}')" class="text-xs px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700">Sửa</button>
+                <button onclick="deleteEntry('${e.id}')" class="text-xs px-2.5 py-1 rounded-lg bg-red-50 text-red-600">Xóa</button>
+              </div>` : ""}
+          </div>
+          <p class="text-sm text-slate-700 mt-2.5 whitespace-pre-line leading-relaxed">${esc(e.content)}</p>
+        </div>
+      `).join("");
+    }
+
+    // TÌM KIẾM GỢI Ý TRỰC TIẾP (AUTOCOMPLETE)
+    function handleAutocomplete() {
+      const input = document.getElementById("entry-search");
+      const box = document.getElementById("suggestions-box");
+      const clearBtn = document.getElementById("clear-search-btn");
+      const raw = input.value.trim();
+      clearBtn.classList.toggle("hidden", !raw);
+
+      if (!raw) { box.classList.add("hidden"); return; }
+
+      const q = norm(raw);
+      const matches = entries.filter(e =>
+        norm(e.title_en).includes(q) || norm(e.title_vi).includes(q) || norm(e.content).includes(q)
+      ).slice(0, 10);
+
+      if (!matches.length) {
+        box.innerHTML = `<div class="p-3 text-xs text-slate-400 text-center">Không tìm thấy kết quả phù hợp</div>`;
+      } else {
+        box.innerHTML = matches.map(e => `
+          <div onclick="jumpToEntry('${e.id}', '${e.category}')" class="p-3 active:bg-indigo-50 cursor-pointer flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <div class="font-semibold text-sm text-slate-900 truncate">${esc(e.title_en)}</div>
+              ${e.title_vi ? `<div class="text-xs text-slate-500 truncate">${esc(e.title_vi)}</div>` : ""}
+            </div>
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${CAT_META[e.category].badge}">
+              ${CAT_META[e.category].label}
+            </span>
+          </div>
+        `).join("");
+      }
+      box.classList.remove("hidden");
+    }
+
+    function jumpToEntry(id, category) {
+      document.getElementById("suggestions-box").classList.add("hidden");
+      switchTab(category);
+      setTimeout(() => {
+        const target = document.getElementById("entry-" + id);
+        if (target) {
+          target.scrollIntoView({ behavior: "smooth", block: "center" });
+          target.classList.remove("highlight-item");
+          void target.offsetWidth;
+          target.classList.add("highlight-item");
+        }
+      }, 60);
+    }
+
+    function clearSearch() {
+      document.getElementById("entry-search").value = "";
+      document.getElementById("suggestions-box").classList.add("hidden");
+      document.getElementById("clear-search-btn").classList.add("hidden");
+    }
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#entry-search") && !e.target.closest("#suggestions-box")) {
+        document.getElementById("suggestions-box").classList.add("hidden");
+      }
+    });
+
+    // CRUD ADMIN
+    function closeModals() {
+      document.getElementById("game-modal").classList.add("hidden");
+      document.getElementById("entry-modal").classList.add("hidden");
+    }
+
+    function openGameModal(id = "") {
+      const g = games.find(x => x.id === id);
+      document.getElementById("game-modal-title").textContent = g ? "Sửa Board Game" : "Thêm Board Game";
+      document.getElementById("game-id").value = g ? g.id : "";
+      document.getElementById("game-name").value = g ? g.name : "";
+      document.getElementById("game-desc").value = g ? g.description : "";
+      document.getElementById("game-modal").classList.remove("hidden");
+    }
+
+    async function saveGame() {
+      const id = document.getElementById("game-id").value;
+      const name = document.getElementById("game-name").value.trim();
+      const description = document.getElementById("game-desc").value.trim();
+      if (!name) return alert("Vui lòng nhập tên Board Game!");
+
+      const res = id
+        ? await sb.from("games").update({ name, description }).eq("id", id)
+        : await sb.from("games").insert({ name, description });
+
+      if (res.error) return alert("Lỗi lưu: " + res.error.message);
+      closeModals();
+      loadGames();
+    }
+
+    async function deleteGame(id) {
+      if (!confirm("Xóa game này và toàn bộ bản dịch bên trong?")) return;
+      const { error } = await sb.from("games").delete().eq("id", id);
+      if (error) return alert("Lỗi xóa: " + error.message);
+      loadGames();
+    }
+
+    function openEntryModal(id = "") {
+      const e = entries.find(x => x.id === id);
+      document.getElementById("entry-modal-title").textContent = e ? "Sửa nội dung" : "Thêm nội dung mới";
+      document.getElementById("entry-id").value = e ? e.id : "";
+      document.getElementById("entry-category").value = e ? e.category : currentTab;
+      document.getElementById("entry-title-en").value = e ? e.title_en : "";
+      document.getElementById("entry-title-vi").value = e ? e.title_vi : "";
+      document.getElementById("entry-content").value = e ? e.content : "";
+      document.getElementById("entry-modal").classList.remove("hidden");
+    }
+
+    async function saveEntry() {
+      const id = document.getElementById("entry-id").value;
+      const payload = {
+        game_id: currentGame.id,
+        category: document.getElementById("entry-category").value,
+        title_en: document.getElementById("entry-title-en").value.trim(),
+        title_vi: document.getElementById("entry-title-vi").value.trim(),
+        content: document.getElementById("entry-content").value.trim()
+      };
+      if (!payload.title_en || !payload.content) return alert("Vui lòng nhập tiêu đề và nội dung dịch!");
+
+      const res = id
+        ? await sb.from("entries").update(payload).eq("id", id)
+        : await sb.from("entries").insert(payload);
+
+      if (res.error) return alert("Lỗi lưu: " + res.error.message);
+      closeModals();
+      await loadEntries();
+      switchTab(payload.category);
+    }
+
+    async function deleteEntry(id) {
+      if (!confirm("Bạn chắc chắn muốn xóa mục này?")) return;
+      const { error } = await sb.from("entries").delete().eq("id", id);
+      if (error) return alert("Lỗi xóa: " + error.message);
+      loadEntries();
+    }
+
+    init();
+  </script>
+</body>
+</html>
